@@ -30,14 +30,14 @@
   }
   #world {
     position: absolute; left: 6vw; top: 50%;
-    transition: transform 900ms cubic-bezier(.22,.8,.25,1), opacity 600ms ease;
+    transition: transform 350ms cubic-bezier(.22,.8,.25,1), opacity 600ms ease;
   }
   .line {
     position: relative;
     white-space: nowrap;
     line-height: 2.6;
     transform-origin: left center;
-    transition: opacity 900ms ease, transform 900ms cubic-bezier(.22,.8,.25,1);
+    transition: opacity 350ms ease, transform 350ms cubic-bezier(.22,.8,.25,1);
   }
   .fn { color: var(--fn); }
   .str { color: var(--str); }
@@ -73,19 +73,22 @@ const LINES = [
   { fn: "when.yah", arg: "You're looking",    key: "like an angel on",   val: "the walls of Versailles" },
   { fn: "when.yah", arg: "The most",    key: "alive I've",   val: "ever been" },
   { fn: "when.yah", arg: "But kiss",    key: "me and",   val: "I might" },
-];
 
 // Bagian yang dikosongkan tidak akan menyebabkan error
 LINES.forEach(l => { l.fn = l.fn ?? ""; l.arg = l.arg ?? ""; l.key = l.key ?? ""; l.val = l.val ?? ""; });
 
-const TYPE_SPEED = 55;      // ms per huruf
-const LINE_PAUSE = 800;     // jeda setelah satu baris selesai
+/* ---- Tempo: semua waktu dihitung dalam ketukan ---- */
+const BPM = 130;            // tempo lagu (130 = sekitar tempo drop dead)
+const TYPE_BEATS = 3;       // lama mengetik satu baris (dalam ketukan)
+const HOLD_BEATS = 0.5;     // jeda setelah baris selesai
+const OUT_BEATS = 0.5;      // lama zoom out sebelum pindah baris
+                            // total satu baris = 3 + 0.5 + 0.5 = 4 ketukan = 1 bar
+const BEAT = 60000 / BPM;   // 1 ketukan dalam ms
+
 const ACTIVE_ZOOM = 1.05;   // pembesaran kecil baris yang sedang diketik
 const ZOOM_IN = 1.7;        // kamera mendekat saat mengetik (1 = tanpa zoom)
-const ZOOM_IN_MS = 2200;    // lama zoom in
-const ZOOM_OUT_MS = 900;    // lama zoom out setelah baris selesai
 const END_ZOOM = 0.8;       // zoom out terakhir setelah semua baris selesai
-const FOLLOW_MS = 500;      // kehalusan kamera mengikuti cursor (kecil = lebih cepat)
+const FOLLOW_MS = 150;      // kehalusan kamera mengikuti cursor (kecil = lebih cepat)
 const FADE_STEP = 0.38;     // pudar per baris ke atas
 const VISIBLE_BACK = 3;     // berapa baris lama yang masih terlihat samar
 
@@ -174,21 +177,27 @@ async function run() {
     world.appendChild(el);
     focus(i);                        // geser ke baris baru
     followX(0);
-    await sleep(350);
-    zoom(ZOOM_IN, ZOOM_IN_MS);       // zoom in sambil mengetik
+    const typeMs = TYPE_BEATS * BEAT;
+    zoom(ZOOM_IN, typeMs);           // zoom in sepanjang mengetik
     const len = total(l);
-    for (let k = 0; k <= len; k++) {
-      el.innerHTML = html(l, k) + '<span class="cursor"></span>';
-      const c = el.querySelector(".cursor");
-      if (c) followX(c.offsetLeft * ACTIVE_ZOOM);   // kamera ikut cursor
-      await sleep(TYPE_SPEED);
+    const t0 = performance.now();
+    let k = -1;
+    while (k < len) {                // jumlah huruf mengikuti waktu, jadi tetap pas dengan tempo
+      const next = Math.min(len, Math.floor((performance.now() - t0) / typeMs * (len + 1)));
+      if (next !== k) {
+        k = next;
+        el.innerHTML = html(l, k) + '<span class="cursor"></span>';
+        const c = el.querySelector(".cursor");
+        if (c) followX(c.offsetLeft * ACTIVE_ZOOM);   // kamera ikut cursor
+      }
+      await sleep(8);
     }
     el.innerHTML = html(l, len);     // cursor hilang setelah selesai
-    await sleep(LINE_PAUSE);
+    await sleep(HOLD_BEATS * BEAT);
     if (i < LINES.length - 1) {
-      zoom(1, ZOOM_OUT_MS);          // zoom out sebelum pindah baris
+      zoom(1, OUT_BEATS * BEAT);     // zoom out sebelum pindah baris
       followX(0);
-      await sleep(ZOOM_OUT_MS * 0.6);
+      await sleep(OUT_BEATS * BEAT);
     }
   }
   zoom(END_ZOOM, 1800);              // zoom out panjang di akhir
