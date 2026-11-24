@@ -17,13 +17,28 @@
   html, body { height: 100%; margin: 0; }
   body {
     background: var(--bg);
-    display: flex; align-items: center; justify-content: center;
     font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
-    font-size: clamp(14px, 2.4vw, 26px);
+    font-size: clamp(11px, 1.8vw, 24px);
     color: #ddd;
     overflow: hidden;
   }
-  #stage { padding: 0 6vw; white-space: pre-wrap; line-height: 2; min-height: 6em; }
+  #stage { position: fixed; inset: 0; overflow: hidden; }
+  #cam {
+    position: absolute; inset: 0;
+    transform-origin: 0 50%;          /* zoom terhadap tengah layar, posisi diatur lewat JS */
+    will-change: transform;
+  }
+  #world {
+    position: absolute; left: 6vw; top: 50%;
+    transition: transform 900ms cubic-bezier(.22,.8,.25,1), opacity 600ms ease;
+  }
+  .line {
+    position: relative;
+    white-space: nowrap;
+    line-height: 2.6;
+    transform-origin: left center;
+    transition: opacity 900ms ease, transform 900ms cubic-bezier(.22,.8,.25,1);
+  }
   .fn { color: var(--fn); }
   .str { color: var(--str); }
   .key { color: var(--key); }
@@ -37,34 +52,72 @@
 </style>
 </head>
 <body>
-<div id="stage"></div>
+<div id="stage"><div id="cam"><div id="world"></div></div></div>
 
 <script>
 /* ==========================================================
    ISI BAGIAN INI DENGAN TEKS ANDA SENDIRI
    Tiap baris punya 4 bagian:
-   fn  : kata pertama sebelum titik/kurung (hijau biru), contoh: "kita.bilang"
+   fn  : kata pertama sebelum kurung (biru), contoh: "kita.bilang"
    arg : teks di dalam kurung pertama (hijau)
    key : kunci setelah kurawal (ungu)
    val : teks nilai (hijau)
    Contoh hasil:  kita.bilang( "halo_dunia" ){ salam: "selamat datang" }
    ========================================================== */
 const LINES = [
-  { fn: "we.say", arg: "One night", key: "I was", val: "bored in bed" },
-  { fn: "aku.tulis",   arg: "baris_kedua",    key: "isi",   val: "tempel teks reff kamu di sini" },
-  { fn: "ia.kirim",    arg: "baris_ketiga",   key: "pesan", val: "tambah atau hapus baris sesukamu" },
+  { fn: "when.yah", arg: "One night", key: "I was", val: "bored in bed" },
+  { fn: "when.yah", arg: "And stalked",    key: "you on",   val: "the internet" },
+  { fn: "when.yah", arg: "It's feminine",   key: "intuition" },   
+  { fn: "when.yah", arg: "Cuz I always",    key: "had a vision of us",   val: "standing like this" },
+  { fn: "when.yah", arg: "All pressed up",    key: "in the",   val: "bathroom line" },
+  { fn: "when.yah", arg: "You're looking",    key: "like an angel on",   val: "the walls of Versailles" },
+  { fn: "when.yah", arg: "The most",    key: "alive I've",   val: "ever been" },
+  { fn: "when.yah", arg: "But kiss",    key: "me and",   val: "I might" },
 ];
 
-const TYPE_SPEED = 55;    // ms per huruf
-const LINE_PAUSE = 700;   // jeda antar baris
-const SHOW_LINES = 2;     // jumlah baris yang tampil bersamaan di layar
+// Bagian yang dikosongkan tidak akan menyebabkan error
+LINES.forEach(l => { l.fn = l.fn ?? ""; l.arg = l.arg ?? ""; l.key = l.key ?? ""; l.val = l.val ?? ""; });
 
-const stage = document.getElementById("stage");
+const TYPE_SPEED = 55;      // ms per huruf
+const LINE_PAUSE = 800;     // jeda setelah satu baris selesai
+const ACTIVE_ZOOM = 1.05;   // pembesaran kecil baris yang sedang diketik
+const ZOOM_IN = 1.7;        // kamera mendekat saat mengetik (1 = tanpa zoom)
+const ZOOM_IN_MS = 2200;    // lama zoom in
+const ZOOM_OUT_MS = 900;    // lama zoom out setelah baris selesai
+const END_ZOOM = 0.8;       // zoom out terakhir setelah semua baris selesai
+const FOLLOW_MS = 500;      // kehalusan kamera mengikuti cursor (kecil = lebih cepat)
+const FADE_STEP = 0.38;     // pudar per baris ke atas
+const VISIBLE_BACK = 3;     // berapa baris lama yang masih terlihat samar
+
+const world = document.getElementById("world");
+const cam = document.getElementById("cam");
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
 
+/* ---- Kamera: zoom dan mengikuti cursor ---- */
+let s = 1, targetS = 1, zoomTau = 400;   // skala sekarang dan target
+let fx = 0, targetFx = 0;                // posisi cursor (px) dari awal baris
+let lastT = performance.now();
+
+function zoom(scale, ms) { targetS = scale; zoomTau = Math.max(1, ms / 3); }
+function followX(x) { targetFx = x; }
+
+function tick(now) {
+  const dt = Math.min(64, now - lastT);
+  lastT = now;
+  s  += (targetS  - s)  * (1 - Math.exp(-dt / zoomTau));
+  fx += (targetFx - fx) * (1 - Math.exp(-dt / FOLLOW_MS * 3));
+  const W = window.innerWidth, L = W * 0.06;
+  const txStart  = L * (1 - s);              // awal baris tetap di margin kiri
+  const txFollow = W * 0.5 - s * (L + fx);   // cursor di tengah layar
+  const tx = Math.min(txStart, txFollow);
+  cam.style.transform = `translate(${tx}px, 0) scale(${s})`;
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+/* ---- Tampilan teks ---- */
 function html(l, n) {
-  // n = jumlah karakter yang sudah diketik dari seluruh baris
   const parts = [
     ['fn',   l.fn],
     ['punc', '( "'],
@@ -86,20 +139,65 @@ function html(l, n) {
 }
 const total = l => l.fn.length + 3 + l.arg.length + 4 + l.key.length + 2 + 1 + l.val.length + 2;
 
+// Baris aktif di tengah, baris lama memudar
+function focus(active) {
+  const els = world.children;
+  if (!els.length) return;
+  const lh = els[0].offsetHeight;
+  world.style.transform = `translateY(${-(active + 0.5) * lh}px)`;
+  for (let j = 0; j < els.length; j++) {
+    const d = active - j;
+    const el = els[j];
+    if (d === 0) {
+      el.style.opacity = 1;
+      el.style.transform = `scale(${ACTIVE_ZOOM})`;
+    } else {
+      el.style.opacity = d > VISIBLE_BACK ? 0 : Math.max(0.08, 1 - d * FADE_STEP);
+      el.style.transform = "scale(1)";
+    }
+  }
+}
+
 async function run() {
-  const done = [];
-  for (const l of LINES) {
+  world.innerHTML = "";
+  world.style.transition = "none";
+  world.style.transform = "translateY(0)";
+  void world.offsetHeight;           // paksa reflow
+  world.style.transition = "";
+  s = targetS = 1; fx = targetFx = 0;
+
+  for (let i = 0; i < LINES.length; i++) {
+    const l = LINES[i];
+    const el = document.createElement("div");
+    el.className = "line";
+    el.style.opacity = 0;
+    world.appendChild(el);
+    focus(i);                        // geser ke baris baru
+    followX(0);
+    await sleep(350);
+    zoom(ZOOM_IN, ZOOM_IN_MS);       // zoom in sambil mengetik
     const len = total(l);
-    for (let i = 0; i <= len; i++) {
-      const shown = done.slice(-(SHOW_LINES - 1)).concat(html(l, i));
-      stage.innerHTML = shown.join("\n") + '<span class="cursor"></span>';
+    for (let k = 0; k <= len; k++) {
+      el.innerHTML = html(l, k) + '<span class="cursor"></span>';
+      const c = el.querySelector(".cursor");
+      if (c) followX(c.offsetLeft * ACTIVE_ZOOM);   // kamera ikut cursor
       await sleep(TYPE_SPEED);
     }
-    done.push(html(l, len));
+    el.innerHTML = html(l, len);     // cursor hilang setelah selesai
     await sleep(LINE_PAUSE);
+    if (i < LINES.length - 1) {
+      zoom(1, ZOOM_OUT_MS);          // zoom out sebelum pindah baris
+      followX(0);
+      await sleep(ZOOM_OUT_MS * 0.6);
+    }
   }
-  await sleep(2500);
-  run(); // ulang dari awal
+  zoom(END_ZOOM, 1800);              // zoom out panjang di akhir
+  followX(0);
+  await sleep(2400);
+  world.style.opacity = 0;           // pudar lalu ulang dari awal
+  await sleep(900);
+  world.style.opacity = 1;
+  run();
 }
 run();
 </script>
