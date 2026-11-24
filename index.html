@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lirik Kode</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --fn: #7aa2f7;      /* nama fungsi */
+    --str: #b5e65c;     /* teks dalam kutip */
+    --key: #d66bd3;     /* kunci */
+    --punc: #e8a85b;    /* kurung dan kurawal */
+    --cursor: #ff3b4e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-size: clamp(14px, 2.4vw, 26px);
+    color: #ddd;
+    overflow: hidden;
+  }
+  #stage { padding: 0 6vw; white-space: pre-wrap; line-height: 2; min-height: 6em; }
+  .fn { color: var(--fn); }
+  .str { color: var(--str); }
+  .key { color: var(--key); }
+  .punc { color: var(--punc); }
+  .cursor {
+    display: inline-block; width: .6em; height: 1.1em; vertical-align: text-bottom;
+    background: var(--cursor); border-radius: 2px;
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { to { visibility: hidden; } }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<script>
+/* ==========================================================
+   ISI BAGIAN INI DENGAN TEKS ANDA SENDIRI
+   Tiap baris punya 4 bagian:
+   fn  : kata pertama sebelum titik/kurung (hijau biru), contoh: "kita.bilang"
+   arg : teks di dalam kurung pertama (hijau)
+   key : kunci setelah kurawal (ungu)
+   val : teks nilai (hijau)
+   Contoh hasil:  kita.bilang( "halo_dunia" ){ salam: "selamat datang" }
+   ========================================================== */
+const LINES = [
+  { fn: "kita.bilang", arg: "ganti_teks_ini", key: "baris", val: "ganti teks ini juga" },
+  { fn: "aku.tulis",   arg: "baris_kedua",    key: "isi",   val: "tempel teks reff kamu di sini" },
+  { fn: "ia.kirim",    arg: "baris_ketiga",   key: "pesan", val: "tambah atau hapus baris sesukamu" },
+];
+
+const TYPE_SPEED = 55;    // ms per huruf
+const LINE_PAUSE = 700;   // jeda antar baris
+const SHOW_LINES = 2;     // jumlah baris yang tampil bersamaan di layar
+
+const stage = document.getElementById("stage");
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+function html(l, n) {
+  // n = jumlah karakter yang sudah diketik dari seluruh baris
+  const parts = [
+    ['fn',   l.fn],
+    ['punc', '( "'],
+    ['str',  l.arg],
+    ['punc', '" ){ '],
+    ['key',  l.key + ': '],
+    ['punc', '"'],
+    ['str',  l.val],
+    ['punc', '" }'],
+  ];
+  let left = n, out = "";
+  for (const [cls, text] of parts) {
+    if (left <= 0) break;
+    const piece = text.slice(0, left);
+    left -= piece.length;
+    out += `<span class="${cls}">${esc(piece)}</span>`;
+  }
+  return out;
+}
+const total = l => l.fn.length + 3 + l.arg.length + 4 + l.key.length + 2 + 1 + l.val.length + 2;
+
+async function run() {
+  const done = [];
+  for (const l of LINES) {
+    const len = total(l);
+    for (let i = 0; i <= len; i++) {
+      const shown = done.slice(-(SHOW_LINES - 1)).concat(html(l, i));
+      stage.innerHTML = shown.join("\n") + '<span class="cursor"></span>';
+      await sleep(TYPE_SPEED);
+    }
+    done.push(html(l, len));
+    await sleep(LINE_PAUSE);
+  }
+  await sleep(2500);
+  run(); // ulang dari awal
+}
+run();
+</script>
+</body>
+</html>
